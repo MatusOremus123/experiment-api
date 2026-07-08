@@ -68,9 +68,8 @@ def init_db() -> None:
                 exercise_id  TEXT PRIMARY KEY,
                 started_at   TEXT,
                 ended_at     TEXT,
-                features     TEXT NOT NULL DEFAULT '{}',   -- merged feature dict, JSON
+                payload      TEXT NOT NULL DEFAULT '{}',   -- assembled ExerciseData (openapi shape + extras), JSON
                 files        TEXT NOT NULL DEFAULT '{}',   -- saved upload paths, JSON
-                errors       TEXT NOT NULL DEFAULT '{}',   -- per-stream error notes, JSON
                 created_at   TEXT NOT NULL,
                 FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
             );
@@ -113,18 +112,23 @@ def exercise_to_dict(row: sqlite3.Row, has_data: bool) -> dict:
 
 
 def exercise_data_to_dict(row: sqlite3.Row) -> dict:
+    """
+    Serve the ExerciseData that was assembled and stored ONCE at recording/stop
+    (see pipeline.process_recording). This only reads stored JSON — no reprocessing.
+
+    The payload follows the professor's openapi ExerciseData shape (mouthOpening /
+    soundPressure / footSpeed / aggregates) as a hybrid: fields we can produce are
+    filled, the rest are empty/null with reasons under `_notes`. Our raw scalar
+    features are also included verbatim under `features`. The exact final field
+    mapping remains a pending TEAM DECISION.
+    """
+    payload = _loads(row["payload"])
     return {
         "exerciseId": row["exercise_id"],
         "startedAt": row["started_at"],
         "endedAt": row["ended_at"],
-        # NOTE: our extraction pipeline produces GAIT features whose names do
-        # not map 1:1 onto the professor's ExerciseData schema (mouthOpening /
-        # soundPressure / footSpeed / stepLengths). Per the brief we store and
-        # serve our ACTUAL feature dict as-is under `features`; the exact
-        # field-name mapping to the reference schema is a pending TEAM DECISION.
-        "features": _loads(row["features"]),
+        **payload,  # mouthOpening, soundPressure, footSpeed, aggregates, features, errors, _notes
         "files": _loads(row["files"]),
-        "errors": _loads(row["errors"]),
     }
 
 
